@@ -1,0 +1,54 @@
+services:
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:main
+    ports:
+      - "3001:8080"
+    environment:
+      OLLAMA_BASE_URL: "http://host.docker.internal:11434"  # Communique avec le service Ollama
+      OPENAI_API_URL: "http://pipelines:9099"  # Communique avec le service Pipelines
+    volumes:
+      - ./open-webui:/app/backend/data  # Persistance des données localement
+    depends_on:
+      - pipelines
+    networks:
+      - webui-net
+
+  pipelines:
+    image: ghcr.io/open-webui/pipelines:main
+    ports:
+      - "9099:9099"
+    volumes:
+      - ./pipelines:/app/pipelines
+      - ./data:/app/data
+      - ./db:/app/db
+      - ./DataInterpreter:/app/DataInterpreter
+      - shared_data:/app/shared_data
+    environment:
+      - PIPELINES_DIR=/app/pipelines
+      - PIPELINES_REQUIREMENTS_PATH=/app/pipelines/requirements.txt
+      - PYTHONPATH=/app/DataInterpreter
+      - LLAMAINDEX_OLLAMA_BASE_URL=http://ollama:11434
+      - LLAMAINDEX_MODEL_NAME=llama3.2:latest
+      - LLAMAINDEX_RAG_MODEL_NAME=duckdb-nsql:latest
+      - LLAMAINDEX_CONTEXT_MODEL_NAME=command-r-plus:latest
+    networks:
+      - webui-net
+
+  filebrowser:
+    image: filebrowser/filebrowser
+    container_name: filebrowser
+    volumes:
+      - shared_data:/srv
+    ports:
+      - "8080:80"
+    environment:
+      - FB_NOAUTH=true
+
+networks:
+  webui-net:
+
+volumes:
+  ollama:
+    driver: local
+  shared_data:
+    driver: local
