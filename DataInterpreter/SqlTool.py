@@ -2,19 +2,30 @@ import duckdb
 
 
 def execute_sql_query(query):
+    """
+    Exécute une requête SQL sur une base DuckDB et retourne les résultats formatés.
+    """
     try:
-        print(f"Execution requete sql: {query}")
-        connection = duckdb.connect("/app/db/my_database.duckdb")
-        # Execution requete SQL
-        results = connection.execute(query).fetchall()
-        # Récupération des colones utilisées
-        column_names = [desc[0] for desc in connection.description]
+        print(f"Exécution de la requête SQL : {query}")
+        connection = duckdb.connect("my_database.duckdb")
+
+        # Exécution de la requête SQL
+        cursor = connection.execute(query)
+        results = cursor.fetchall()
+
+        # Récupération des noms de colonnes
+        column_names = [desc[0] for desc in cursor.description]
+
+        # Formatage des résultats sous forme de liste de dictionnaires
         formatted_results = [dict(zip(column_names, row)) for row in results]
 
-        print(f"resultat requete SQL: {formatted_results}")
+        print(f"Résultats de la requête SQL : {formatted_results}")
         return formatted_results
+
     except Exception as e:
-        print(f"Error during SQL execution: {e}")
+        print(f"Erreur lors de l'exécution de la requête SQL : {e}")
+        return None
+
     finally:
         connection.close()
 

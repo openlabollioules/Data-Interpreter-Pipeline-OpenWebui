@@ -9,6 +9,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import shutil
 
+active_observers = []
 observed_directories = set()
 created_paths = []  # Liste pour stocker les chemins des fichiers et dossiers créés
 
@@ -46,6 +47,9 @@ def move_and_create_links(source_files, target_directory, base_url):
 
 
 class FileCreationHandler(FileSystemEventHandler):
+    def on_any_event(self, event):
+        print(f"Événement détecté: {event.event_type} - {event.src_path}")
+
     def on_created(self, event):
         # Si c'est un fichier (et non un dossier), on l'ajoute à la liste
         path = os.path.abspath(event.src_path)
@@ -63,9 +67,21 @@ class FileCreationHandler(FileSystemEventHandler):
             print(f"Fichier modifié: {event.src_path}")
 
 
+def stop_all_observers():
+    """Arrête tous les observateurs actifs et libère les ressources."""
+    global active_observers
+    for observer in active_observers:
+        observer.stop()
+        observer.join()
+    active_observers = []
+    print("Tous les observateurs ont été arrêtés et réinitialisés.")
+
+
 # Fonction de surveillance
 def watch_directories(directories, stop_event):
+    global active_observers, observed_directories
     observers = []
+    stop_all_observers()
     for directory in directories:
         if directory in observed_directories:
             print(f"Le répertoire {directory} est déjà surveillé.")
@@ -76,7 +92,8 @@ def watch_directories(directories, stop_event):
         observer = Observer()
         observer.schedule(event_handler, directory, recursive=True)
         observer.start()
-        observers.append(observer)
+        # observers.append(observer)
+        active_observers.append(observer)
 
     try:
         while not stop_event.is_set():
@@ -90,10 +107,13 @@ def watch_directories(directories, stop_event):
 
 
 def parse_and_execute_python_code(tool, context, sql_results):
-    global created_paths
+    global created_paths, observed_directories
     created_paths = (
         []
     )  # Réinitialiser la liste des chemins créés avant chaque exécution
+
+    observed_directories.clear()
+    stop_all_observers()
 
     code_match = re.search(r"```python\n([\s\S]*?)```", tool)
     if not code_match:
@@ -104,7 +124,10 @@ def parse_and_execute_python_code(tool, context, sql_results):
     print(f"Parsed Python code: {code}")
 
     stop_event = threading.Event()
-    directories_to_watch = ["./"]  # Ajouter tous les répertoires à surveiller ici
+    directories_to_watch = [
+        "./",
+        "/app",
+    ]  # Ajouter tous les répertoires à surveiller ici
     watch_thread = threading.Thread(
         target=watch_directories, args=(directories_to_watch, stop_event)
     )

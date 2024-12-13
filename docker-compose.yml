@@ -23,6 +23,7 @@ services:
       - ./db:/app/db
       - ./DataInterpreter:/app/DataInterpreter
       - shared_data:/app/shared_data
+      - ./scripts:/app/scripts
     environment:
       - PIPELINES_DIR=/app/pipelines
       - PIPELINES_REQUIREMENTS_PATH=/app/pipelines/requirements.txt
@@ -39,6 +40,7 @@ services:
     container_name: filebrowser
     volumes:
       - shared_data:/srv
+      - ./data:/srv/data
     ports:
       - "8080:80"
     environment:
@@ -52,3 +54,4 @@ volumes:
     driver: local
   shared_data:
     driver: local
+

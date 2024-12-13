@@ -22,29 +22,25 @@ def clean_column_name(column_name):
     return re.sub(r"[^a-zA-Z0-9_]", "_", column_name).lower()
 
 
-def prepare_database(directory=None):
-    filepaths = None
-    if filepaths is None and directory is not None:
-        filepaths = []
-        # Parcourir tous les fichiers du dossier
-        for filename in os.listdir(directory):
-            filepath = os.path.join(directory, filename)
-            # Vérifier l'extension du fichier pour s'assurer que le type est pris en charge
-            if filepath.endswith((".xls", ".xlsx", ".csv", ".json", ".pdf", ".py")):
-                filepaths.append(filepath)
-        print(f"Files to be processed from directory '{directory}': {filepaths}")
+def prepare_database(filepaths=None, ollama_model=None, start=False):
 
-    # Si filepaths est toujours None ou vide après vérification, arrêtez l'exécution
-    if not filepaths:
-        print("No files to process.")
-        return None
-    if filepaths is not None:
+    if filepaths is not None and start == True:
         remove_database_file()
-    conn = duckdb.connect("/app/db/my_database.duckdb")
-    print(f"Files to be processed: {filepaths}")
-    if filepaths:
 
-        for filepath in filepaths:
+    all_filepaths = []
+    for path in filepaths:
+        if os.path.isdir(path):
+            for root, _, files in os.walk(path):
+                for file in files:
+                    all_filepaths.append(os.path.join(root, file))
+        else:
+            all_filepaths.append(path)
+
+    conn = duckdb.connect("/app/db/my_database.duckdb")
+    print(f"Files to be processed: {all_filepaths}")
+    if all_filepaths:
+
+        for filepath in all_filepaths:
             print(f"Processing file: {filepath}")
 
             # Déterminer le type de fichier et charger les données
@@ -54,6 +50,9 @@ def prepare_database(directory=None):
                 data = pd.read_excel(filepath, sheet_name=None, engine="xlrd")
             elif filepath.endswith(".xlsx"):
                 print("Loading Excel (.xlsx) file...")
+                data = pd.read_excel(filepath, sheet_name=None, engine="openpyxl")
+            elif filepath.endswith(".xlsm"):
+                print("Loading Excel (.xlsm) file...")
                 data = pd.read_excel(filepath, sheet_name=None, engine="openpyxl")
             elif filepath.endswith(".csv"):
                 print("Loading CSV file...")
@@ -66,7 +65,7 @@ def prepare_database(directory=None):
             elif filepath.endswith(".pdf"):
                 print("Processing PDF file...")
                 try:
-                    extracted_text, images_data = extract_pdf(filepath)
+                    extracted_text, images_data = extract_pdf(filepath, ollama_model)
 
                     # Conversion des données extraites en DataFrame
                     if extracted_text:
@@ -120,7 +119,7 @@ def prepare_database(directory=None):
                     continue
             else:
                 raise ValueError(
-                    "Le fichier n'est ni un fichier .xls, .xlsx, .csv, .json, .pdf, ni un fichier Python."
+                    "Le fichier n'est ni un fichier .xls, .xlsx, .xlsm, .csv, .json, .pdf, ni un fichier Python."
                 )
 
             # Traiter chaque feuille ou table du fichier

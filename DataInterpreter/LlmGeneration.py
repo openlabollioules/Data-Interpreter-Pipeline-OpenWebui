@@ -1,10 +1,52 @@
 from SqlTool import execute_sql_query
 from PythonTool import parse_and_execute_python_code
+import re
 
 
 def command_r_plus_plan(question, schema, contextualisation_model):
+    """
+    Génère un plan d'action basé sur la question et le schéma fourni.
+    """
     schema_description = "Voici le schéma de la base de données :\n"
-    # Mise en forme du schéma de la base de donnée
+    for table_name, columns in schema.items():
+        schema_description += (
+            f"Table '{table_name}' contient les colonnes suivantes :\n"
+        )
+        for column in columns:
+            schema_description += f"  - '{column['name']}' (type: {column['type']})\n"
+        schema_description += "\n"
+
+    print("voici le schema : ", schema_description)
+
+    prompt = (
+        f"{schema_description}\n"
+        f'La demande est : "{question}"\n\n'
+        "**Instructions pour générer le plan d'action :**\n"
+        "1. Identifiez si des informations peuvent être extraites directement des colonnes mentionnées dans le schéma. Si c'est possible, fournissez un plan pour extraire ces données directement.\n"
+        "2. Si une extraction de données est nécessaire, proposez une requête SQL simple et précise pour obtenir uniquement les données pertinentes. Assurez-vous que cette requête respecte strictement le schéma fourni, sans faire d'hypothèses sur des colonnes ou des données non mentionnées.\n"
+        "3. Si la demande implique une interprétation, un calcul, une visualisation ou une génération de contenu (par exemple, graphiques, calculs mathématiques, ou documents), produisez uniquement un code prêt à être exécuté, sans inclure d'explications ou de commentaires superflus.\n"
+        "4. Si la demande concerne la correction ou l'amélioration d'un code existant, fournissez directement les corrections ou améliorations nécessaires sans mentionner le contexte technologique (ex. Python). Concentrez-vous sur les ajustements précis nécessaires pour répondre à la demande.\n"
+        "5. Ne proposez pas de technologie ou de méthodes inutiles si ce n'est pas explicitement requis. Par exemple, pour analyser un document ou extraire des informations textuelles, limitez-vous aux étapes d'extraction ou de traitement nécessaires, sauf si la demande précise un type de sortie spécifique (chart, plot, graph, calcul, etc.).\n"
+        "6. Si une conversion ou un ajustement de type (par exemple entre INTEGER et VARCHAR) est nécessaire pour résoudre des erreurs, incluez explicitement ces ajustements dans le plan.\n\n"
+        "**Plan attendu :**\n"
+        "- Fournissez une méthode (SQL ou étapes d'action) basée sur la nature de la question.\n"
+        "- Si SQL suffit pour répondre à la question, ne proposez pas d'autres méthodes inutilement.\n"
+        "- Si la question implique une visualisation ou un calcul, incluez une méthode appropriée pour produire le résultat final.\n"
+        "- Si la demande inclut une correction ou amélioration de code, fournissez uniquement les étapes nécessaires pour corriger ou améliorer le code, sans mentionner le contexte technologique.\n"
+        "- Le plan doit être clair, concis et strictement limité aux informations disponibles dans le schéma et la question.\n"
+    )
+
+    print(f"Generating plan for question: {question}")
+    plan = contextualisation_model.invoke(prompt)
+    print(f"Generated Plan: {plan}")
+    return plan
+
+
+def adjust_sql_query_with_duckdb(sql_query, schema, duckdb_model):
+    """
+    Ajuste une requête SQL en fonction du moteur DuckDB, en gérant les erreurs de types.
+    """
+    schema_description = "Voici le schéma de la base de données pour DuckDB :\n"
     for table_name, columns in schema.items():
         schema_description += (
             f"Table '{table_name}' contient les colonnes suivantes :\n"
@@ -14,59 +56,145 @@ def command_r_plus_plan(question, schema, contextualisation_model):
         schema_description += "\n"
 
     prompt = (
-        f"{schema_description}\n"
-        f'La demande est : "{question}"\n\n'
-        "**Plan d'action :**\n"
-        "- Étape 1 : Identifiez si des informations sont disponibles directement dans les colonnes, et précisez les valeurs de colonne ou types d’information à extraire.\n"
-        "- Étape 2 : Si la demande requiert une extraction de données (comme texte, OCR, code), suggérez des requêtes SQL simples et précises pour obtenir un échantillon représentatif de chaque type de donnée disponible, ou pour répondre à des questions spécifiques. Cette requete doit uniquement se baser sur le schéma que je te fournis. Tu ne dois rien ajouter qui ne soit pas mentionné dans le schéma de la base de donnée.\n"
-        "- Étape 3 : Si la demande implique une interprétation (par exemple, analyser le contenu ou trouver des mots-clés), expliquez brièvement comment interpréter les résultats SQL sans utiliser d'étapes de réflexion intermédiaires ou de raisonnement complexe.\n"
-        "Répondez uniquement aux besoins précis de la question sans suggérer de code Python, sauf si spécifiquement requis pour traiter un type de donnée extrait. **Si la demande inclut des termes comme chart, plot, graph, ou fait référence à un calcul ou une visualisation, générez du code pour créer un graphique ou effectuer le calcul.  Le plan doit contenir une seule méthode (SQL ou autre) en fonction de ce qui est nécessaire pour traiter la demande."
+        f"{schema_description}\n\n"
+        f"Voici une requête SQL générée initialement :\n```sql\n{sql_query}\n```\n\n"
+        "**Instructions pour DuckDB :**\n"
+        "- Corrigez les erreurs éventuelles en validant les colonnes et les relations entre les tables.\n"
+        "- Si une incompatibilité de types est détectée (par exemple, INTEGER vs VARCHAR), ajoutez un casting explicite.\n"
+        "- Fournissez uniquement une requête SQL corrigée et optimisée dans un bloc ```sql```."
     )
 
-    print(
-        f"Generating plan from Command R Plus for question: {question} with schema: {schema_description}"
-    )
-    plan = contextualisation_model.invoke(prompt)
-    print(f"Plan généré par Command R Plus : {plan}")
-    return plan
+    print("Adjusting SQL query with DuckDB model...")
+    try:
+        adjusted_query = duckdb_model.invoke(prompt)
+        print(f"Adjusted SQL query: {adjusted_query}")
+        return adjusted_query
+    except Exception as e:
+        print(f"Erreur lors de l'ajustement de la requête SQL : {e}")
+        raise
+
+
+def validate_sql_with_schema(schema, query):
+    """
+    Valide que les colonnes utilisées dans la requête existent dans les tables référencées.
+    """
+    print("Validating SQL query against schema...")
+    try:
+        column_map = {
+            table: [col["name"] for col in cols] for table, cols in schema.items()
+        }
+
+        # Extraire les tables utilisées dans la requête
+        tables_in_query = set(
+            re.findall(r"\bFROM\s+(\w+)|\bJOIN\s+(\w+)", query, flags=re.IGNORECASE)
+        )
+        tables_in_query = {
+            table for match in tables_in_query for table in match if table
+        }
+
+        # Vérifier les colonnes référencées dans les tables utilisées
+        missing_columns = []
+        for table in tables_in_query:
+            if table in column_map:
+                for column in re.findall(rf"{table}\.(\w+)", query):
+                    if column not in column_map[table]:
+                        missing_columns.append(f"{table}.{column}")
+            else:
+                missing_columns.append(f"Table inconnue référencée : {table}")
+
+        if missing_columns:
+            raise ValueError(
+                f"Colonnes ou tables manquantes dans le schéma : {missing_columns}"
+            )
+
+        print("SQL query validation successful.")
+        return True
+    except Exception as e:
+        print(f"Erreur de validation SQL : {e}")
+        raise
+
+
+def clean_sql_query(sql_query, schema):
+    """
+    Nettoie et simplifie une requête SQL générée :
+    - Supprime les alias inutiles.
+    - Remplace les colonnes ambiguës par leur nom complet uniquement si elles sont utilisées dans la requête.
+    """
+    print("Cleaning SQL query...")
+    try:
+        # Construire une map des colonnes par table
+        column_map = {
+            table: [col["name"] for col in cols] for table, cols in schema.items()
+        }
+
+        # Supprimer les alias inutiles
+        sql_query = re.sub(r"\bAS\s+\w+\b", "", sql_query, flags=re.IGNORECASE)
+
+        # Ajouter les noms complets uniquement pour les colonnes ambiguës
+        for table, columns in column_map.items():
+            for column in columns:
+                pattern = rf"(?<!\.)\b{column}\b(?!\.)"  # Colonne sans préfixe
+                replacement = f"{table}.{column}"
+                if re.search(pattern, sql_query):  # Vérifier si la colonne existe
+                    sql_query = re.sub(pattern, replacement, sql_query)
+
+        # Supprimer les espaces multiples et extra blancs
+        sql_query = re.sub(r"\s+", " ", sql_query).strip()
+        print("Cleaned SQL query:", sql_query)
+        return sql_query
+    except Exception as e:
+        print(f"Erreur lors du nettoyage de la requête SQL : {e}")
+        raise
+
+
+def extract_sql_from_plan(plan_text):
+    """
+    Extrait toutes les requêtes SQL d'un plan.
+    """
+    print("Extracting SQL queries from plan...")
+    sql_pattern = re.compile(r"```sql(.*?)```", re.DOTALL)
+    matches = sql_pattern.findall(plan_text)
+    if matches:
+        print(f"Extracted SQL queries: {matches}")
+        return [match.strip() for match in matches]
+    raise ValueError("Aucune requête SQL trouvée dans le plan.")
 
 
 def generate_tools_with_llm(
-    plan,
-    schema,
-    context,
-    sql_results,
-    python_results,
-    database_model,
-    reasoning_model,
+    plan, schema, context, sql_results, python_results, database_model, reasoning_model
 ):
-    print("Génération des outils en fonction du plan...")
-    schema_description = "Voici le schéma de la base de données :\n"
-    # Mise en forme du schéma de la base de donnée
-    for table_name, columns in schema.items():
-        schema_description += (
-            f"Table '{table_name}' contient les colonnes suivantes :\n"
-        )
-        for column in columns:
-            schema_description += f"  - '{column['name']}' (type: {column['type']})\n"
-        schema_description += "\n"
+    """
+    Génère les outils nécessaires en fonction du plan.
+    """
+    print("Generating tools based on the plan...")
+    files_generated = []
 
     if "SQL" in plan:
-        print("Génération d'une requête SQL...")
-        prompt = (
-            f"{schema_description}\n\n"
-            f"Plan d’action :\n{plan}\n\n"
-            f"Demande : \"{context['question']}\"\n\n"
-            "**Requête SQL :**\n"
-            "- Formulez une requête SQL simple qui extrait uniquement les informations nécessaires du schéma de la base de données pour répondre à la question ou aux étapes du plan.\n"
-            "- La requête doit être directe, sans clauses complexes (comme des agrégations avancées ou des jointures inutiles), sauf si spécifiquement nécessaire.\n"
-            "Le point majeur est de rester fidèle, ce que dit exactement le plan pour les requetes SQL il faut le faire à l'identique, tu prends la requete qu'il y a souvent dans une partie souvent nommé dans le plan : (Voici une requête SQL) ou autre chose de ce genre"
-        )
-        sql_tool = database_model.invoke(prompt)
-        sql_results = execute_sql_query(sql_tool)
-        context["sql_results"] = sql_results
+        try:
+            # Extraction de la requête SQL depuis le plan
+            sql_query = extract_sql_from_plan(plan)[0]
+            print(f"Initial SQL Query: {sql_query}")
 
-    if "Python" or "python" in plan:
+            # Nettoyage et validation des étapes SQL
+            sql_query = clean_sql_query(sql_query, schema)
+            print(f"Cleaned SQL Query: {sql_query}")
+
+            validate_sql_with_schema(schema, sql_query)
+
+            # Ajustement avec DuckDB (type casting ou corrections spécifiques)
+            sql_query = adjust_sql_query_with_duckdb(sql_query, schema, database_model)
+            print(f"Adjusted SQL Query: {sql_query}")
+
+            # Exécuter la requête ajustée
+            sql_results = execute_sql_query(sql_query)
+            print(f"SQL Query Results: {sql_results}")
+            context["sql_results"] = sql_results
+
+        except Exception as e:
+            print(f"Erreur lors de l'exécution de la requête SQL : {e}")
+            context["sql_results"] = None
+
+    if "Python" in plan or "python" in plan:
         print("Génération de code Python...")
         print("les voila:", sql_results)
         prompt = (
