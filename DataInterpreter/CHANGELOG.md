@@ -1,5 +1,12 @@
 # Récapitulatif des versions du Data Interpreter
 
+## [1.1.2] - 2025-01-03
+### Modifié
+- Correction de la détection des requêtes SQL afin de pouvoir exécuter plusieurs requêtes SQL
+- Correction de la fonction de détection des noms de colones au moment de la lecture d'un fichier afin de pouvoir utiliser des nombres en guise de nom de colonne
+- Correction du prompt pour le modèle de planification afin de s'assurer d'obtenir des requêtes exécutables dans l'immédiat.
+- Correction du path pour le fichier duckdb afin d'aller le chercher au bon endroit.
+
 ## [1.1.1] - 2025-01-03
 ### Ajouté
 - Initialisation du projet.

@@ -21,7 +21,6 @@ def remove_database_file():
 def clean_column_name(column_name):
     return re.sub(r"[^a-zA-Z0-9_]", "_", column_name).lower()
 
-
 def prepare_database(filepaths=None, ollama_model=None, start=False):
 
     if filepaths is not None and start == True:
@@ -129,7 +128,7 @@ def prepare_database(filepaths=None, ollama_model=None, start=False):
                     "_",
                     os.path.splitext(os.path.basename(filepath))[0].strip().lower(),
                 )
-                table_name = f"{base_table_name}_{clean_column_name(sheet_name)}"
+                table_name = f"{base_table_name}_{clean_column_name(str(sheet_name))}"
                 print(f"Creating table '{table_name}' for sheet '{sheet_name}'.")
 
                 # Créer la table principale
@@ -143,12 +142,11 @@ def prepare_database(filepaths=None, ollama_model=None, start=False):
 
     return conn
 
-
 def create_table_from_dataframe(conn, df, table_name):
     # Déterminer le schéma des colonnes avec des types explicites
     column_definitions = []
     for column_name, dtype in df.dtypes.items():
-        column_name_cleaned = clean_column_name(column_name)
+        column_name_cleaned = clean_column_name(str(column_name))
         column_type = map_dtype_to_duckdb_type(dtype, df[column_name])
         column_definitions.append(f'"{column_name_cleaned}" {column_type}')
 
@@ -158,7 +156,11 @@ def create_table_from_dataframe(conn, df, table_name):
     create_table_query = (
         f"CREATE TABLE IF NOT EXISTS {table_name} ({column_definitions_str})"
     )
-    conn.execute(create_table_query)
+    try:
+        conn.execute(create_table_query)
+    except Exception as e:
+        print(f"Error creating table '{table_name}': {e}")
+        return
 
     # Insérer les données par morceaux
     chunks = np.array_split(df, np.ceil(len(df) / 500))
@@ -200,7 +202,7 @@ def handle_nested_data(conn, df, base_table_name):
             # Créer une table pour les données imbriquées
             if nested_entries:
                 nested_df = pd.json_normalize(nested_entries, sep="_")
-                nested_table_name = f"{base_table_name}_{clean_column_name(column)}"
+                nested_table_name = f"{base_table_name}_{clean_column_name(str(column))}"
                 create_table_from_dataframe(conn, nested_df, nested_table_name)
                 print(
                     f"Nested data from '{column}' loaded into table '{nested_table_name}'."

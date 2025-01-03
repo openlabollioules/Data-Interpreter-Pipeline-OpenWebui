@@ -9,18 +9,24 @@ def execute_sql_query(query):
         print(f"Exécution de la requête SQL : {query}")
         connection = duckdb.connect("my_database.duckdb")
 
-        # Exécution de la requête SQL
-        cursor = connection.execute(query)
-        results = cursor.fetchall()
+        queries = query.strip().split(";")
+        all_results = []
 
-        # Récupération des noms de colonnes
-        column_names = [desc[0] for desc in cursor.description]
-
-        # Formatage des résultats sous forme de liste de dictionnaires
-        formatted_results = [dict(zip(column_names, row)) for row in results]
-
-        print(f"Résultats de la requête SQL : {formatted_results}")
-        return formatted_results
+        for query in queries:
+            try:
+                if query.strip():
+                    # Exécution de la requête SQL
+                    cursor = connection.execute(query)
+                    results = cursor.fetchall()
+                    # Récupération des noms de colonnes
+                    column_names = [desc[0] for desc in cursor.description]
+                    # Formatage des résultats sous forme de liste de dictionnaires
+                    formatted_results = [dict(zip(column_names, row)) for row in results]
+                    print(f"Résultats de la requête SQL : {formatted_results}")
+                    all_results.append(formatted_results)
+            except Exception as e:
+                print(f"Erreur lors de l'exécution de la requête suivante : {query}\n{e}")
+        return all_results
 
     except Exception as e:
         print(f"Erreur lors de l'exécution de la requête SQL : {e}")

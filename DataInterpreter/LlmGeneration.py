@@ -19,7 +19,7 @@ def command_r_plus_plan(question, schema, contextualisation_model):
         f'The request is: "{question}"\n\n'
         "**Instructions to generate the action plan:**\n"
         "1. Identify if information can be directly extracted from the columns mentioned in the schema. If possible, provide a plan to directly extract this data.\n"
-        f"2. If data extraction is necessary, propose a simple and precise SQL query to retrieve only the relevant data. Ensure that this query strictly adheres to the provided schema, without making assumptions about unspecified columns or tables. You must not invent tables or columns; use only this schema: {schema_description}\n"
+        f"2. If data extraction is necessary, propose a simple and precise SQL query to retrieve only the relevant data, ensuring it is fully executable without requiring prior modifications. Make sure this query strictly adheres to the provided schema, without making assumptions about unspecified columns or data. You must not invent tables or columns; use only this schema: {schema_description}\n"
         "3. If the request involves interpretation, calculation, visualization, or content generation (e.g., charts, mathematical calculations, or documents), produce only executable code without including unnecessary explanations or comments.\n"
         "4. If the request involves correcting or improving existing code, provide the necessary corrections or improvements directly without referencing the technological context (e.g., Python). Focus on the precise adjustments needed to address the request.\n"
         "5. Do not propose unnecessary technologies or methods unless explicitly required. For instance, when analyzing a document or extracting textual information, limit the steps to necessary extraction or processing, unless the request specifies a specific type of output (chart, plot, graph, calculation, etc.).\n"
@@ -43,10 +43,21 @@ def adjust_sql_query_with_duckdb(sql_query, schema, duckdb_model):
     """
     schema_description = "Voici le schéma de la base de données pour DuckDB :\n"
     for table_name, columns in schema.items():
-        schema_description += f"Table '{table_name}' contient les colonnes suivantes :\n"
+        schema_description += (
+            f"Table '{table_name}' contient les colonnes suivantes :\n"
+        )
         for column in columns:
             schema_description += f"  - '{column['name']}' (type: {column['type']})\n"
         schema_description += "\n"
+
+    """prompt = (
+        f"{schema_description}\n\n"
+        f"Voici une requête SQL générée initialement :\n```sql\n{sql_query}\n```\n\n"
+        "**Instructions pour DuckDB :**\n"
+        "- Corrigez les erreurs éventuelles en validant les colonnes et les relations entre les tables.\n"
+        "- Si une incompatibilité de types est détectée (par exemple, INTEGER vs VARCHAR), ajoutez un casting explicite.\n"
+        "- Fournissez uniquement une requête SQL corrigée et optimisée dans un bloc ```sql```."
+    )"""
 
     prompt = (
         f"{schema_description}\n\n"
@@ -66,17 +77,24 @@ def adjust_sql_query_with_duckdb(sql_query, schema, duckdb_model):
         print(f"Erreur lors de l'ajustement de la requête SQL : {e}")
         raise
 
+
 def validate_sql_with_schema(schema, query):
     """
     Valide que les colonnes utilisées dans la requête existent dans les tables référencées.
     """
     print("Validating SQL query against schema...")
     try:
-        column_map = {table: [col['name'] for col in cols] for table, cols in schema.items()}
+        column_map = {
+            table: [col["name"] for col in cols] for table, cols in schema.items()
+        }
 
         # Extraire les tables utilisées dans la requête
-        tables_in_query = set(re.findall(r"\bFROM\s+(\w+)|\bJOIN\s+(\w+)", query, flags=re.IGNORECASE))
-        tables_in_query = {table for match in tables_in_query for table in match if table}
+        tables_in_query = set(
+            re.findall(r"\bFROM\s+(\w+)|\bJOIN\s+(\w+)", query, flags=re.IGNORECASE)
+        )
+        tables_in_query = {
+            table for match in tables_in_query for table in match if table
+        }
 
         # Vérifier les colonnes référencées dans les tables utilisées
         missing_columns = []
@@ -89,7 +107,9 @@ def validate_sql_with_schema(schema, query):
                 missing_columns.append(f"Table inconnue référencée : {table}")
 
         if missing_columns:
-            raise ValueError(f"Colonnes ou tables manquantes dans le schéma : {missing_columns}")
+            raise ValueError(
+                f"Colonnes ou tables manquantes dans le schéma : {missing_columns}"
+            )
 
         print("SQL query validation successful.")
         return True
@@ -107,7 +127,9 @@ def clean_sql_query(sql_query, schema):
     print("Cleaning SQL query...")
     try:
         # Construire une map des colonnes par table
-        column_map = {table: [col['name'] for col in cols] for table, cols in schema.items()}
+        column_map = {
+            table: [col["name"] for col in cols] for table, cols in schema.items()
+        }
 
         # Supprimer les alias inutiles
         #sql_query = re.sub(r"\bAS\s+\w+\b", "", sql_query, flags=re.IGNORECASE)
@@ -148,26 +170,25 @@ def generate_tools_with_llm(plan, schema, context, sql_results, python_results, 
     """
     print("Generating tools based on the plan...")
     files_generated = []
+    results = []
 
     if "SQL" in plan:
         try:
             # Extraction de la requête SQL depuis le plan
-            sql_query = extract_sql_from_plan(plan)[-1]
-            print(f"Initial SQL Query: {sql_query}")
-
-            # Nettoyage et validation des étapes SQL
-            sql_query = clean_sql_query(sql_query, schema)
-            print(f"Cleaned SQL Query: {sql_query}")
-
-            validate_sql_with_schema(schema, sql_query)
-
-            # Ajustement avec DuckDB (type casting ou corrections spécifiques)
-            sql_query = adjust_sql_query_with_duckdb(sql_query, schema, database_model)
-            print(f"Adjusted SQL Query: {sql_query}")
-
-            # Exécuter la requête ajustée
-            sql_results = execute_sql_query(sql_query)
-            print(f"SQL Query Results: {sql_results}")
+            sql_queries = extract_sql_from_plan(plan)
+            for i, sql_query in enumerate(sql_queries):
+                print(f"Initial SQL Query: {sql_query}")
+                # Nettoyage et validation des étapes SQL
+                sql_query = clean_sql_query(sql_query, schema)
+                print(f"Cleaned SQL Query: {sql_query}")
+                validate_sql_with_schema(schema, sql_query)
+                # Ajustement avec DuckDB (type casting ou corrections spécifiques)
+                sql_query = adjust_sql_query_with_duckdb(sql_query, schema, database_model)
+                print(f"Adjusted SQL Query: {sql_query}")
+                # Exécuter la requête ajustée
+                sql_results = execute_sql_query(sql_query)
+                print(f"SQL Query Results: {sql_results}")
+                results.append(sql_results)
             context["sql_results"] = sql_results
 
         except Exception as e:
